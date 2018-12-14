@@ -31,15 +31,23 @@ void manual_con_Call(Control sender, int type) {
   Serial.println(sender.value); }
 
 void number1Call(Control sender, int type) {
+  open1_gas_begin = sender.value.toInt();
+
   Serial.println(sender.value); 
   }
 void number1_con_Call(Control sender, int type) {
+  open1_continue = sender.value.toInt();
+
   Serial.println(sender.value); 
   }
 void number2Call(Control sender, int type) {
+  open2_gas_begin = sender.value.toInt();
+
   Serial.println(sender.value); 
   }
-void number2_con_Call(Control sender, int type) { 
+void number2_con_Call(Control sender, int type) {
+  open2_continue = sender.value.toInt();
+ 
   Serial.println(sender.value); 
   }
 
@@ -61,6 +69,17 @@ void switch_gas(Control sender, int value) {
   }
   Serial.print(" ");
   Serial.println(sender.id);
+}
+
+void buttonCallback(Control sender, int type) {
+  switch (type) {
+    case B_DOWN:
+      Serial.println("Button DOWN");
+      break;
+    case B_UP:
+      Serial.println("Button UP");
+      break;
+  }
 }
 
 void switch_loop(Control sender, int value) {
@@ -120,15 +139,15 @@ void setup(void) {
   ESPUI.label("状态:", COLOR_TURQUOISE, "关");
   ESPUI.label("按天循环状态:", COLOR_TURQUOISE, "关");
 
-  ESPUI.number("循环开启时间1", &number1Call, COLOR_ALIZARIN, 5, 0, 10);
-  ESPUI.number("循环开启时间1持续时间", &number1_con_Call, COLOR_ALIZARIN, 5, 0, 10);
+  ESPUI.number("循环开启时间1", &number1Call, COLOR_ALIZARIN, open1_gas_begin, 0, 24);
+  ESPUI.number("循环开启时间1持续时间", &number1_con_Call, COLOR_ALIZARIN, open1_continue, 0, 5);
 
-  ESPUI.number("循环开启时间2", &number2Call, COLOR_WETASPHALT, 5, 0, 10);
-  ESPUI.number("循环开启时间2持续时间", &number2_con_Call, COLOR_WETASPHALT, 5, 0, 10);
-  ESPUI.switcher("开启壁挂炉按天循环", true, &switch_loop, COLOR_NONE);
-  ESPUI.number("手动开启壁挂炉持续时间(小时)", &manual_con_Call, COLOR_WETASPHALT, 5, 0, 10);
+  ESPUI.number("循环开启时间2", &number2Call, COLOR_WETASPHALT, open2_gas_begin, 0, 24);
+  ESPUI.number("循环开启时间2持续时间", &number2_con_Call, COLOR_WETASPHALT, open2_continue, 0, 10);
+  ESPUI.switcher("开启壁挂炉按天循环", false, &switch_loop, COLOR_NONE);
+  ESPUI.number("手动开启壁挂炉持续时间(小时)", &manual_con_Call, COLOR_WETASPHALT, max_on_time, 0, 5);
   ESPUI.switcher("手动开启壁挂炉", false, &switch_gas, COLOR_ALIZARIN);
-  
+
 
   /*
      .begin loads and serves all files from PROGMEM directly.
@@ -137,7 +156,7 @@ void setup(void) {
    */
 
   dnsServer.start(DNS_PORT, "*", apIP);
-  ESPUI.begin("ESPUI Control");
+  ESPUI.begin("gdzhang的壁挂炉！！");
 }
 
 void loop(void) {
