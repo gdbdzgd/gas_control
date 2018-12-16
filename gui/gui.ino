@@ -1,9 +1,15 @@
 #include <DNSServer.h>
 #include <ESPUI.h>
+#include "time.h"
 
-const byte DNS_PORT = 53;
-IPAddress apIP(192, 168, 1, 1);
-DNSServer dnsServer;
+
+const char* ssid       = "gdzhanghome";
+const char* password   = "gdzhang@xyzhang";
+
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 3600;
+const int   daylightOffset_sec = 3600;
+
 
 #if defined(ESP32)
 #include <WiFi.h>
@@ -11,20 +17,29 @@ DNSServer dnsServer;
 #include <ESP8266WiFi.h>
 #endif
 
-const char *ssid = "ESPUI";
-const char *password = "";
-
 long oldTime = 0;
 bool switchi = false;
 bool gas_on = false;
 bool loop_on = false;
 int max_on_time = 2;
+int open_counter= max_on_time *3600;
 int open1_gas_begin=6;
 int open1_continue=2;
 int open2_gas_begin=17;
 int open2_continue=2;
+int control_pin = 2;
+String cur_time = "0000000000000000";
+struct tm timeinfo;
+void printLocalTime()
+{
+  struct tm timeinfo1;
+  if(!getLocalTime(&timeinfo1)){
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  Serial.println(&timeinfo1, "%A, %B %d %Y %H:%M:%S");
 
-
+}
 void manual_con_Call(Control sender, int type) { 
   max_on_time = sender.value.toInt();
   
@@ -57,13 +72,15 @@ void switch_gas(Control sender, int value) {
     case S_ACTIVE:
       Serial.print("gas on\n");
       gas_on = true;
-      ESPUI.print(0, "状态: 开");
-
+      digitalWrite(control_pin, HIGH);
+      ESPUI.print(0, "开");
+      open_counter=max_on_time * 3600;
       break;
     case S_INACTIVE:
       Serial.print("gas off");
       gas_on = false;
-      ESPUI.print(0, "状态: 关闭");
+      digitalWrite(control_pin, LOW);
+      ESPUI.print(0, "关闭");
 
       break;
   }
@@ -88,13 +105,18 @@ void switch_loop(Control sender, int value) {
       Serial.print("loop on");
 
       loop_on = true;
-      ESPUI.print(1, "按天循环状态: 开");
+      ESPUI.print(1, "开");
 
       break;
     case S_INACTIVE:
       Serial.print("loop off");
-      loop_on = true;
-            ESPUI.print(1, "按天循环状态: 关闭");
+      loop_on = false;
+      if( gas_on == false ){
+          digitalWrite(control_pin, LOW);
+          ESPUI.print(0, "关");
+
+        }
+      ESPUI.print(1, "关");
 
 
       break;
@@ -105,21 +127,26 @@ void switch_loop(Control sender, int value) {
 
 void setup(void) {
   Serial.begin(115200);
-  WiFi.mode(WIFI_AP);
-  WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
-  /*
-  #if defined(ESP32)
-    WiFi.setHostname(ssid);
-  #else
-    WiFi.hostname(ssid);
-  #endif
-  */
+  //connect to WiFi
+  Serial.printf("Connecting to %s ", ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+  }
+   
+   pinMode(control_pin, OUTPUT);           // set pin to input
+   digitalWrite(control_pin, LOW);       // turn on pullup resistors
 
-  WiFi.softAP(ssid);
-  // WiFi.softAP(ssid, password);
-  Serial.println("");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.softAPIP());
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+  
+  //init and get the time
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+        delay(2000);
+
+  printLocalTime();
 
   // change the beginning to this if you want to join an existing network
   /*
@@ -135,18 +162,19 @@ void setup(void) {
      Serial.print("IP address: ");
      Serial.println(WiFi.localIP());
    */
-
   ESPUI.label("状态:", COLOR_TURQUOISE, "关");
   ESPUI.label("按天循环状态:", COLOR_TURQUOISE, "关");
 
-  ESPUI.number("循环开启时间1", &number1Call, COLOR_ALIZARIN, open1_gas_begin, 0, 24);
-  ESPUI.number("循环开启时间1持续时间", &number1_con_Call, COLOR_ALIZARIN, open1_continue, 0, 5);
+  ESPUI.number("（1）每天开启时间（24小时制）", &number1Call, COLOR_ALIZARIN, open1_gas_begin, 0, 24);
+  ESPUI.number("（1）每天开启时长（小时）", &number1_con_Call, COLOR_ALIZARIN, open1_continue, 0, 5);
 
-  ESPUI.number("循环开启时间2", &number2Call, COLOR_WETASPHALT, open2_gas_begin, 0, 24);
-  ESPUI.number("循环开启时间2持续时间", &number2_con_Call, COLOR_WETASPHALT, open2_continue, 0, 10);
-  ESPUI.switcher("开启壁挂炉按天循环", false, &switch_loop, COLOR_NONE);
+  ESPUI.number("（2）每天开启时间（24小时制）", &number2Call, COLOR_WETASPHALT, open2_gas_begin, 0, 24);
+  ESPUI.number("（2）每天开启时长（小时）", &number2_con_Call, COLOR_WETASPHALT, open2_continue, 0, 10);
+  ESPUI.switcher("壁挂炉按天循环开启", false, &switch_loop, COLOR_NONE);
   ESPUI.number("手动开启壁挂炉持续时间(小时)", &manual_con_Call, COLOR_WETASPHALT, max_on_time, 0, 5);
   ESPUI.switcher("手动开启壁挂炉", false, &switch_gas, COLOR_ALIZARIN);
+  ESPUI.label("当前时间:", COLOR_TURQUOISE, "当前时间");
+  ESPUI.label("手动开启壁挂路自动关闭剩余时间:", COLOR_TURQUOISE, "自动关闭");
 
 
   /*
@@ -155,13 +183,73 @@ void setup(void) {
      (.prepareFileSystem has to be run in an empty sketch before)
    */
 
-  dnsServer.start(DNS_PORT, "*", apIP);
+  
   ESPUI.begin("gdzhang的壁挂炉！！");
 }
 
 void loop(void) {
-  dnsServer.processNextRequest();
+  int ti;
+  int ttc_hour,ttc_min,ttc_sec;
+  ttc_hour=open_counter/3600;
+  ttc_min=(open_counter%3600)/60;
+  ttc_sec=(open_counter%3600)%60;
+  String ttc_hour_s,ttc_min_s,ttc_sec_s;
 
+  char toshow[32];
+  //dnsServer.processNextRequest();
+  
+  if ((loop_on == true) && (gas_on == false )){
+    if(!getLocalTime(&timeinfo)){
+      Serial.println("Failed to obtain time");
+      return;
+    }else{
+
+      ti = (timeinfo.tm_hour + 8)%24 -1 ;
+            Serial.println("tm_hour");
+      Serial.println(timeinfo.tm_hour);
+      Serial.println(ti);
+
+      Serial.println(open1_gas_begin);
+      Serial.println(open1_continue);
+      Serial.println(open2_gas_begin);
+      Serial.println(open2_continue);
+      if (( ti >= open1_gas_begin && 
+           ti <= open1_gas_begin + open1_continue)||
+           
+         ( ti >= open2_gas_begin && 
+           ti <= open2_gas_begin + open2_continue))
+           {
+           digitalWrite(control_pin, HIGH);
+           ESPUI.print(0, "开");
+           Serial.println("in loop gas on ");
+           }else{
+           digitalWrite(control_pin, LOW);
+           ESPUI.print(0, "关");
+           Serial.println("in loop gas off ");
+
+            
+            } 
+    }
+  }
+  if ( gas_on == true ){
+    open_counter=open_counter-1;
+    ttc_hour=open_counter/3600;
+    ttc_min=(open_counter%3600)/60;
+    ttc_sec=(open_counter%3600)%60;
+    ttc_hour_s=String(ttc_hour);
+    ttc_min_s=String(ttc_min);
+    ttc_sec_s=String(ttc_sec);
+    String show=ttc_hour_s + "小时" + ttc_min_s + "分" + ttc_sec_s +"秒";
+    show.toCharArray(toshow,32);
+    Serial.print("opencounter:");
+    Serial.println(open_counter);
+    ESPUI.print(10, toshow);
+    if (open_counter  < 0){
+           gas_on = false;
+           digitalWrite(control_pin, LOW);
+           ESPUI.print(0, "关");
+      }
+  }
  /* if (millis() - oldTime > 5000) {
     ESPUI.print("Millis:", String(millis()));
     switchi = !switchi;
@@ -169,4 +257,9 @@ void loop(void) {
     oldTime = millis();
   }
   */
+    getLocalTime(&timeinfo);
+    ESPUI.print(9, asctime(&timeinfo));
+
+    delay(1000);
+
 }
